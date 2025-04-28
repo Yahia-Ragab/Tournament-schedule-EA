@@ -1,9 +1,11 @@
 import random
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-teams = ['A', 'B', 'C', 'D', 'E', 'F']
+teams = ['Arsenal', 'Real madrid', 'Chelsea', 'Barcelona', 'Byarn Munchen', 'Liverpool']
 times = ['10', '12', '14']
 days = ['Friday', 'Saturday', 'Sunday']
-venues = ['1', '2', '3']
+venues = ['Old trafford', 'Sintiago burnabio', 'Villa park']
 fitness_history = []
 
 pop_size = 200
@@ -27,7 +29,6 @@ def generate_prnt():
         pop.append(individual)
     return pop
 
-
 def set_rounds(population):
     round_number = len(teams) - 1
     for individual in population:
@@ -37,7 +38,6 @@ def set_rounds(population):
             round_index = min(round_index, round_number)
             match.append(round_index)
     return population
-
 
 def fitness(schedule):
     penalty = 0
@@ -68,9 +68,8 @@ def fitness(schedule):
             if team2 in team_round_play_count[round]:
                 penalty += 1
             team_round_play_count[round].add(team2)
-        fitness_history.append(penalty)
-    return penalty
 
+    return penalty
 
 def select(population, tournament_size=25):
     selected_parents = []
@@ -80,6 +79,17 @@ def select(population, tournament_size=25):
         selected_parents.append(best_individual)
     return selected_parents
 
+def pos_select(population, k=25):
+    # POS Selection (Optimistic selection)
+    parents = []
+    while len(parents) < 2:
+        sample = random.sample(population, k)
+        sample_sorted = sorted(sample, key=lambda ind: fitness([ind]))
+        if random.random() < 0.8:
+            parents.append(sample_sorted[0])  # Best with 80% chance
+        else:
+            parents.append(random.choice(sample_sorted[1:]))  # Otherwise from others
+    return parents
 
 def crossover(parent1, parent2):
     split_point1 = int(len(parent1) * 0.3)
@@ -91,12 +101,11 @@ def crossover(parent1, parent2):
     return child1, child2
 
 def mutation(individual):
-    if len(individual) < 2:
+    if len(individual) < 3:
         return individual
     point1, point2 = random.sample(range(len(individual)), 2)
     individual[point1], individual[point2] = individual[point2], individual[point1]
     return individual
-
 
 def generate_pop(prnt1, prnt2):
     new_population = []
@@ -125,8 +134,6 @@ def generate_pop(prnt1, prnt2):
     return new_population[:pop_size]
 
 
-
-
 pop = generate_prnt()
 pop = set_rounds(pop)
 
@@ -137,7 +144,7 @@ global_best_individual = best_individual
 global_best_fitness = best_fitness
 
 for generation in range(1, gen + 1):
-    s = select(pop)
+    s = pos_select(pop)  
     s1 = s[0]
     s2 = s[1]
     s1 = mutation(s1)
@@ -147,6 +154,7 @@ for generation in range(1, gen + 1):
 
     best_individual = min(pop, key=lambda ind: fitness([ind]))
     best_fitness = fitness([best_individual])
+    fitness_history.append(best_fitness)
     print(f"Generation {generation} - Best Fitness: {best_fitness}")
     if best_fitness < global_best_fitness:
         global_best_individual = best_individual
@@ -154,12 +162,19 @@ for generation in range(1, gen + 1):
     if global_best_fitness == 0:
         break
 
-global_best_individual = global_best_individual
-
 global_best_individual = sorted(global_best_individual, key=lambda match: match[-1])
 
-print("\nBest Schedule Across All Generations (Ordered by Round):")
+print("\nBest Schedule Across All Generations:")
 for match in global_best_individual:
     print(match)
 
 print("\nBest Fitness Across All Generations:", global_best_fitness)
+
+
+plt.plot(fitness_history, label='Fitness History', color='blue')
+plt.title('Best Fitness History Over Generations')
+plt.xlabel('Generation')
+plt.ylabel('Fitness')
+plt.legend()
+plt.grid()
+plt.show()
