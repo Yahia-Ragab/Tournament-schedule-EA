@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 data = pd.read_csv('team.csv')
-data = data.sample(n=6, random_state=42).reset_index(drop=True)
+data = data.sample(n=10, random_state=42).reset_index(drop=True)
 teams = data['Team'].tolist()
 venues = data['Stadium'].tolist()
 
@@ -168,17 +168,18 @@ for gen in range(1, generations + 1):
         fitness_history.append(fitness([global_best]))
         break
 
+day_order = {'Friday': 0, 'Saturday': 1, 'Sunday': 2}
+
 print("\nFinal Corrected Schedule:")
 current_round = None
 match_num = 1
-for match in sorted(global_best, key=lambda x: x[-1]):
-    rnd = match[-1]
-    if rnd != current_round:
-        current_round = rnd
-        match_num = 1
-        print(f"\nRound {current_round}:")
-    print(f"Match {match_num}: {match[0]} vs {match[1]} at {match[2]} Staduim on {match[3]} at {match[4]} o'clock")
-    match_num += 1
+for rnd in range(1, len(teams)):
+    round_matches = [m for m in global_best if m[-1] == rnd]
+    round_matches.sort(key=lambda x: day_order[x[3]]) 
+    print(f"\nRound {rnd}:")
+    for i, match in enumerate(round_matches, 1):
+        print(f"Match {i}: {match[0]} vs {match[1]} at {match[2]} Stadium on {match[3]} at {match[4]} o'clock")
+
 
 final_fitness = fitness([global_best])
 
