@@ -5,10 +5,10 @@ from itertools import combinations
 import copy
 
 data = pd.read_csv('team.csv')
-data = data.sample(n=6).reset_index(drop=True)
+data = data.sample(n=12).reset_index(drop=True)
 teams = data['Team'].tolist()
 venues = data['Stadium'].tolist()
-times = ['10', '12', '14', '16']
+times = ['10', '12', '14','16']
 days = ['Friday', 'Saturday', 'Sunday']
 
 population_size = 80
@@ -82,7 +82,7 @@ def fitness(schedule):
         for r in range(1, len(teams) - 1):
             if r in team_day_by_round[team] and r + 1 in team_day_by_round[team]:
                 if team_day_by_round[team][r] == team_day_by_round[team][r + 1]:
-                    penalty += 1
+                    penalty += 2
     return penalty
 
 def crossover(parent1, parent2):
@@ -142,58 +142,101 @@ def reassign_rounds(schedule):
                     break
     return new_schedule
 
-def pso_optimize(schedule, iterations=100, w=0.5, c1=1.0, c2=1.0):
-    def encode(match):
-        return [venues.index(match[2]), days.index(match[3]), times.index(match[4])]
+def pso_optimize(schedule, iterations=20, w=0.5, c1=1.5, c2=1.5):
+    def encode_match(match):
+        t1, t2, venue, day, time, rnd = match
+        return [
+            teams.index(t1),
+            teams.index(t2),
+            venues.index(venue),
+            days.index(day),
+            times.index(time),
+            rnd - 1
+        ]
 
-    def decode(t1, t2, code, rnd):
-        return [t1, t2, venues[code[0]], days[code[1]], times[code[2]], rnd]
+    def decode_match(encoded):
+        t1, t2, venue, day, time, rnd = encoded
+        return [
+            teams[int(round(t1)) % len(teams)],
+            teams[int(round(t2)) % len(teams)],
+            venues[int(round(venue)) % len(venues)],
+            days[int(round(day)) % len(days)],
+            times[int(round(time)) % len(times)],
+            int(round(rnd)) + 1
+        ]
 
-    def clamp(val, max_val):
-        return max(0, min(val, max_val))
-
-    particle_positions = [encode(m) for m in schedule]
-    velocities = [[0, 0, 0] for _ in particle_positions]
-    personal_best = particle_positions[:]
-    global_best = particle_positions[:]
-    personal_best_schedule = copy.deepcopy(schedule)
-    global_best_schedule = copy.deepcopy(schedule)
-    personal_best_fitness = fitness(personal_best_schedule)
-    global_best_fitness = personal_best_fitness
+    position = [encode_match(m) for m in schedule]
+    velocity = [[random.uniform(-1, 1) for _ in range(6)] for _ in schedule]
+    personal_best_pos = copy.deepcopy(position)
+    personal_best_fit = fitness([decode_match(m) for m in personal_best_pos])
+    global_best_pos = copy.deepcopy(personal_best_pos)
+    global_best_fit = personal_best_fit
 
     for _ in range(iterations):
-        new_schedule = []
-        for i in range(len(schedule)):
-            t1, t2, _, _, _, rnd = schedule[i]
-            for d in range(3):
+        for i in range(len(position)):
+            for d in range(6):
                 r1, r2 = random.random(), random.random()
-                velocities[i][d] = int(
-                    w * velocities[i][d] +
-                    c1 * r1 * (personal_best[i][d] - particle_positions[i][d]) +
-                    c2 * r2 * (global_best[i][d] - particle_positions[i][d])
+                velocity[i][d] = (
+                    w * velocity[i][d]
+                    + c1 * r1 * (personal_best_pos[i][d] - position[i][d])
+                    + c2 * r2 * (global_best_pos[i][d] - position[i][d])
                 )
-                max_val = [len(venues)-1, len(days)-1, len(times)-1][d]
-                particle_positions[i][d] = clamp(particle_positions[i][d] + velocities[i][d], max_val)
-            new_match = decode(t1, t2, particle_positions[i], rnd)
-            new_schedule.append(new_match)
+                position[i][d] += velocity[i][d]
 
-        new_fitness = fitness(new_schedule)
-        if new_fitness < personal_best_fitness:
-            personal_best = [encode(m) for m in new_schedule]
-            personal_best_schedule = copy.deepcopy(new_schedule)
-            personal_best_fitness = new_fitness
+        decoded = [decode_match(p) for p in position]
+        current_fit = fitness(decoded)
+        if current_fit < personal_best_fit:
+            personal_best_pos = copy.deepcopy(position)
+            personal_best_fit = current_fit
+        if personal_best_fit < global_best_fit:
+            global_best_pos = copy.deepcopy(personal_best_pos)
+            global_best_fit = personal_best_fit
 
-        if new_fitness < global_best_fitness:
-            global_best = [encode(m) for m in new_schedule]
-            global_best_schedule = copy.deepcopy(new_schedule)
-            global_best_fitness = new_fitness
+    return [decode_match(p) for p in global_best_pos]
 
-    return global_best_schedule
+def fix_conflicts(schedule):
+    conflict_resolved_schedule = copy.deepcopy(schedule)
+    penalty = fitness(conflict_resolved_schedule)
+    if penalty < 4:
+        return conflict_resolved_schedule
+    seen_pairs = set()
+    round_match = {r: set() for r in range(1, len(teams))}
+    slot_set = set()
+    round_team = [set() for _ in range(len(teams))]
+    team_day_by_round = {team: {} for team in teams}
+    for match in conflict_resolved_schedule:
+        t1, t2, venue, day, time, rnd = match
+        pair = tuple(sorted([t1, t2]))
+        slot = (venue, day, time)
+        if pair in seen_pairs:
+            penalty += 1
+        seen_pairs.add(pair)
+        if pair in round_match[rnd]:
+            penalty += 1
+        round_match[rnd].add(pair)
+        if slot in slot_set:
+            penalty += 1
+        slot_set.add(slot)
+        if t1 in round_team[rnd]:
+            penalty += 1
+        if t2 in round_team[rnd]:
+            penalty += 1
+        round_team[rnd].update([t1, t2])
+        team_day_by_round[t1][rnd] = day
+        team_day_by_round[t2][rnd] = day
+    for team in teams:
+        for r in range(1, len(teams) - 1):
+            if r in team_day_by_round[team] and r + 1 in team_day_by_round[team]:
+                if team_day_by_round[team][r] == team_day_by_round[team][r + 1]:
+                    penalty += 2
+    if penalty >= 4:
+        conflict_resolved_schedule = reassign_rounds(conflict_resolved_schedule)
+        conflict_resolved_schedule = mutate(conflict_resolved_schedule)
+    return conflict_resolved_schedule
 
 def evolutionary_algorithm():
     population = [generate_schedule() for _ in range(population_size)]
     best_schedule = min(population, key=fitness)
-    
     stagnation = 0
     for gen in range(generations):
         if stagnation >= stagnation_limit:
@@ -216,63 +259,26 @@ def evolutionary_algorithm():
             stagnation = 0
         else:
             stagnation += 1
-
-        if stagnation == 40:
-            best_schedule = pso_optimize(best_schedule, iterations=10)
-
         fitness_history.append(fitness(best_schedule))
         print(f"Gen {gen + 1} - Best Fitness: {fitness(best_schedule)}")
         if fitness(best_schedule) == 0:
             break
     return best_schedule
 
-def normalize_schedule(schedule, teams):
-    rounds = len(teams) - 1
-    matches_per_round = len(teams) // 2
-
-    match_dict = {}
-    for m in schedule:
-        pair = tuple(sorted([m[0], m[1]]))
-        match_dict[pair] = m
-
-    matches = list(match_dict.values())
-    random.shuffle(matches)
-
-    round_matches = [[] for _ in range(rounds)]
-    used_teams = [set() for _ in range(rounds)]
-
-    new_schedule = []
-    used_slots = set()
-
-    for t1, t2, _, _, _, _ in matches:
-        for r in range(rounds):
-            if t1 not in used_teams[r] and t2 not in used_teams[r] and len(round_matches[r]) < matches_per_round:
-                used_teams[r].update([t1, t2])
-                round_matches[r].append((t1, t2))
-                break
-
-    for r in range(rounds):
-        for t1, t2 in round_matches[r]:
-            for _ in range(100):
-                venue = random.choice(venues)
-                day = random.choice(days)
-                time = random.choice(times)
-                slot = (venue, day, time)
-                if slot not in used_slots:
-                    used_slots.add(slot)
-                    new_schedule.append([t1, t2, venue, day, time, r + 1])
-                    break
-    return new_schedule
-
-final_schedule = evolutionary_algorithm()
-final_schedule = normalize_schedule(final_schedule, teams)
+use_ea = True
+if use_ea:
+    final_schedule = evolutionary_algorithm()
 
 day_order = {'Friday': 0, 'Saturday': 1, 'Sunday': 2}
 final_schedule.sort(key=lambda x: x[-1])
+
+print("\nFinal Schedule:")
 for rnd in range(1, len(teams)):
+    round_matches = [m for m in final_schedule if m[-1] == rnd]
+    round_matches.sort(key=lambda x: day_order[x[3]])
     print(f"\nRound {rnd}:")
-    for match in sorted([m for m in final_schedule if m[-1] == rnd], key=lambda x: day_order[x[3]]):
-        print(f"{match[0]} vs {match[1]} at {match[2]} on {match[3]} at {match[4]}")
+    for i, match in enumerate(round_matches, 1):
+        print(f"Match {i}: {match[0]} vs {match[1]} at {match[2]} on {match[3]} at {match[4]}")
 
 plt.plot(fitness_history, label="Best Fitness")
 plt.title("Fitness Over Generations (Hybrid GA + PSO)")
@@ -358,8 +364,6 @@ def show_schedule_gui(schedule, teams, days):
             if selected_round and r != selected_round:
                 label.setText("")
                 continue
-
-            # Filter matches for this cell
             matches = [m for m in schedule if m[-1] == r and m[3] == day]
             if search_text:
                 matches = [m for m in matches if search_text in m[0].lower() or search_text in m[1].lower()]
