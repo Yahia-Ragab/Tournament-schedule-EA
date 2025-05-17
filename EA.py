@@ -82,7 +82,7 @@ def fitness(schedule):
         for r in range(1, len(teams) - 1):
             if r in team_day_by_round[team] and r + 1 in team_day_by_round[team]:
                 if team_day_by_round[team][r] == team_day_by_round[team][r + 1]:
-                    penalty += 2
+                    penalty += 0.3
     return penalty
 
 def crossover(parent1, parent2):
@@ -193,46 +193,6 @@ def pso_optimize(schedule, iterations=20, w=0.5, c1=1.5, c2=1.5):
             global_best_fit = personal_best_fit
 
     return [decode_match(p) for p in global_best_pos]
-
-def fix_conflicts(schedule):
-    conflict_resolved_schedule = copy.deepcopy(schedule)
-    penalty = fitness(conflict_resolved_schedule)
-    if penalty < 4:
-        return conflict_resolved_schedule
-    seen_pairs = set()
-    round_match = {r: set() for r in range(1, len(teams))}
-    slot_set = set()
-    round_team = [set() for _ in range(len(teams))]
-    team_day_by_round = {team: {} for team in teams}
-    for match in conflict_resolved_schedule:
-        t1, t2, venue, day, time, rnd = match
-        pair = tuple(sorted([t1, t2]))
-        slot = (venue, day, time)
-        if pair in seen_pairs:
-            penalty += 1
-        seen_pairs.add(pair)
-        if pair in round_match[rnd]:
-            penalty += 1
-        round_match[rnd].add(pair)
-        if slot in slot_set:
-            penalty += 1
-        slot_set.add(slot)
-        if t1 in round_team[rnd]:
-            penalty += 1
-        if t2 in round_team[rnd]:
-            penalty += 1
-        round_team[rnd].update([t1, t2])
-        team_day_by_round[t1][rnd] = day
-        team_day_by_round[t2][rnd] = day
-    for team in teams:
-        for r in range(1, len(teams) - 1):
-            if r in team_day_by_round[team] and r + 1 in team_day_by_round[team]:
-                if team_day_by_round[team][r] == team_day_by_round[team][r + 1]:
-                    penalty += 2
-    if penalty >= 4:
-        conflict_resolved_schedule = reassign_rounds(conflict_resolved_schedule)
-        conflict_resolved_schedule = mutate(conflict_resolved_schedule)
-    return conflict_resolved_schedule
 
 def evolutionary_algorithm():
     population = [generate_schedule() for _ in range(population_size)]
